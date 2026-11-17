@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">QuickSkip 闪跳</string>
+    <string name="accessibility_service_label">QuickSkip 自动跳过服务</string>
+    <string name="accessibility_service_desc">用于检测并在开屏时自动点击广告的“跳过”按钮。纯本地处理，零网络权限，完全保护个人隐私。</string>
+    <string name="service_status_enabled">无障碍服务状态：已开启 (运行中)</string>
+    <string name="service_status_disabled">无障碍服务状态：未开启</string>
+    <string name="btn_enable_service">前往开启无障碍服务</string>
+    <string name="btn_battery_settings">设置后台保活（小米防杀）</string>
+    <string name="tip_title">小米 HyperOS / MIUI 保活关键指引：</string>
+    <string name="tip_content">1. 开启“无障碍”服务（安全提醒等待10秒确认）\n2. 开启“自启动”权限\n3. 省电策略改为“无限制”\n4. 在多任务后台长按卡片加锁</string>
+</resources>
