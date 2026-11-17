@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FAFAFA"
+    android:background="#F8F9FA"
     android:fillViewport="true">
 
     <LinearLayout
@@ -12,67 +12,24 @@
         android:orientation="vertical"
         android:padding="20dp">
 
+        <!-- 标题 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/app_name"
             android:textColor="@color/black"
-            android:textSize="26sp"
+            android:textSize="24sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="轻量化 · 毫秒级跳过 · 零网络权限"
-            android:textColor="#757575"
-            android:textSize="14sp" />
+            android:layout_marginTop="4dp"
+            android:text="v1.2 安全修订版 · 零网络权限 · 极速跳过"
+            android:textColor="#666666"
+            android:textSize="13sp" />
 
         <!-- 状态卡片 -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="2dp"
-            app:strokeColor="#E0E0E0"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <TextView
-                    android:id="@+id/tv_service_status"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/service_status_disabled"
-                    android:textColor="@color/status_red"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="开启无障碍服务后，App 即可自动检测并点击开屏广告的‘跳过’按钮。"
-                    android:textColor="#616161"
-                    android:textSize="13sp" />
-
-                <Button
-                    android:id="@+id/btn_open_accessibility"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:backgroundTint="@color/purple_500"
-                    android:text="@string/btn_enable_service"
-                    android:textColor="@color/white" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- 保活设置卡片 -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -89,9 +46,169 @@
                 android:padding="16dp">
 
                 <TextView
+                    android:id="@+id/tv_service_status"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/tip_title"
+                    android:text="状态检测中..."
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_status_sub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="无障碍服务用于在应用启动时快速识别并点击跳过按钮。"
+                    android:textColor="#666666"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btn_open_accessibility"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:backgroundTint="@color/purple_500"
+                    android:text="@string/btn_enable_service"
+                    android:textColor="@color/white" />
+
+                <Button
+                    android:id="@+id/btn_open_app_settings"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/btn_battery_settings"
+                    android:textColor="@color/purple_700" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 扫描节能策略卡片 -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeColor="#E0E0E0"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="扫描节能策略"
+                    android:textColor="@color/black"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <RadioGroup
+                    android:id="@+id/rg_power_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp">
+
+                    <RadioButton
+                        android:id="@+id/rb_balanced"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="均衡模式 (启动前8秒快速扫描 + 常规1秒巡检，推荐)"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_saver"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="极致省电 (仅在启动前8秒扫描，超时完全静默)"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_paused"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="暂停扫描 (完全停止所有自动检测)"
+                        android:textSize="13sp" />
+                </RadioGroup>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 实验性手势兜底卡片 -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeColor="#E0E0E0"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="手势模拟兜底 (实验性)"
+                            android:textColor="@color/black"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="针对无法通过节点点击的顽固广告模拟点击坐标。默认关闭。"
+                            android:textColor="#666666"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switch_gesture"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 自定义排除应用卡片 -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeColor="#E0E0E0"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="自定义排除应用（白名单）"
                     android:textColor="@color/black"
                     android:textSize="15sp"
                     android:textStyle="bold" />
@@ -99,29 +216,60 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:lineSpacingExtra="4dp"
-                    android:text="@string/tip_content"
-                    android:textColor="#424242"
-                    android:textSize="13sp" />
+                    android:layout_marginTop="4dp"
+                    android:text="银行/支付等敏感应用已默认内置排除。你可在此手动输入包名追加排除（免应用列表读取权限）。"
+                    android:textColor="#666666"
+                    android:textSize="12sp" />
 
-                <Button
-                    android:id="@+id/btn_open_app_settings"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:text="@string/btn_battery_settings"
-                    android:textColor="@color/purple_700" />
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/et_package_name"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="输入包名，如 com.example.app"
+                        android:textSize="13sp"
+                        android:inputType="textUri" />
+
+                    <Button
+                        android:id="@+id/btn_add_pkg"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="添加" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_ignored_list"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="当前自定义排除列表：无"
+                    android:textColor="#757575"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btn_clear_pkg"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="清空自定义排除"
+                    android:textColor="@color/status_red" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- 隐私说明 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="🔒 本应用完全不包含联网代码，不会读取密码或敏感输入，所有识别与点击均在手机本地执行。"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="16dp"
+            android:text="🔒 100% 纯本地运行 · 绝无网络通信 · 完全保护隐私"
             android:textColor="#9E9E9E"
             android:textSize="12sp" />
 

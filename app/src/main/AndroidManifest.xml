@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 零网络权限：没有任何 INTERNET 权限声明，确保 100% 本地运行与隐私安全 -->
+    <!-- 零网络权限：完全未声明 android.permission.INTERNET，杜绝任何数据外泄风险 -->
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.QuickSkip">
 
-        <!-- 主设置页面 -->
+        <!-- 设置页面 -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -21,7 +21,7 @@
             </intent-filter>
         </activity>
 
-        <!-- 核心无障碍跳过服务 -->
+        <!-- 无障碍跳过服务 -->
         <service
             android:name=".SkipAccessibilityService"
             android:exported="true"

@@ -1,185 +1,477 @@
 package com.quickskip.app
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.SystemClock
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
+import java.util.LinkedHashMap
+import kotlin.math.roundToInt
 
 class SkipAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG = "QuickSkip"
-
-        // 跳过关键字正则
-        private val SKIP_REGEX = Regex(
-            "^(?:\\d+\\s*[sS秒]?\\s*)?(?:跳过|跳過|Skip|skip|关闭广告|跳过广告)(?:\\s*\\d+\\s*[sS秒]?)?$"
+        private val SKIP_PATTERNS = listOf(
+            Regex("""^(?:跳过|跳過|跳过广告|关闭广告|(?i:skip))$"""),
+            Regex("""^\d+\s*[sS秒]?\s*[|｜]?\s*(?:跳过|跳過|跳过广告|关闭广告|(?i:skip))\s*[>›]?$"""),
+            Regex("""^(?:跳过|跳過|跳过广告|关闭广告|(?i:skip))\s*(?:[|｜]\s*)?(?:\d+\s*[sS秒]?|[(（]\s*\d+\s*[sS秒]?\s*[)）])\s*[>›]?$"""),
+            Regex("""^(?:跳过|跳过|跳过广告|关闭广告|(?i:skip))\s*[>›]$""")
         )
 
-        // 简短包含匹配（避免误触长文本）
-        private val KEYWORDS = listOf("跳过", "跳過", "Skip", "skip")
+        private val DEFAULT_IGNORED_PACKAGES = setOf(
+            "com.android.systemui",
+            "com.android.settings",
+            "com.android.permissioncontroller",
+            "com.google.android.permissioncontroller",
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.miui.securitycenter",
+            "com.miui.packageinstaller",
+            "com.miui.home",
+            "com.mipay.wallet",
+            "com.miui.tsmclient",
+            "com.xiaomi.account",
+            "com.android.launcher",
+            "com.google.android.apps.nexuslauncher",
+            "com.sohu.inputmethod.sogou.xiaomi",
+            "com.baidu.input_mi",
+            "com.iflytek.inputmethod.miui",
+            "com.google.android.inputmethod.latin",
+            "com.tencent.wetype",
+            "com.eg.android.AlipayGphone",
+            "com.tencent.mm",
+            "com.unionpay"
+        )
+
+        private const val FAST_SCAN_INTERVAL = 150L
+        private const val ATTEMPT_COOLDOWN = 500L
+        private const val ACTION_COOLDOWN = 1000L
+
+        private const val MAX_NODE_DEPTH = 15
+        private const val MAX_NODE_COUNT = 300
+        private const val MAX_TRACKED_PACKAGES = 32
+        private const val MIN_BUTTON_SIZE_DP = 12f
+
+        private const val PREFS_NAME = "quickskip_config"
+        private const val KEY_GESTURE_FALLBACK = "enable_gesture_fallback"
+        private const val KEY_ACTIVE_DURATION = "active_window_duration_ms"
+        private const val KEY_IDLE_INTERVAL = "idle_scan_interval_ms"
+        private const val KEY_MIN_SHORT_EDGE_DP = "min_window_short_edge_dp"
+        private const val KEY_USER_IGNORED_PKGS = "user_ignored_packages"
 
         @Volatile
         var isServiceRunning = false
+
+        @Volatile
+        var enableGestureFallback = false
+
+        @Volatile
+        var activeWindowDurationMs = 8000L
+
+        @Volatile
+        var idleScanIntervalMs = 1000L
+
+        @Volatile
+        var minWindowShortEdgeDp = 180f
+
+        @Volatile
+        var userIgnoredPackages: Set<String> = emptySet()
+
+        fun loadConfig(context: Context) {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            enableGestureFallback = prefs.getBoolean(KEY_GESTURE_FALLBACK, false)
+            activeWindowDurationMs = prefs.getLong(KEY_ACTIVE_DURATION, 8000L)
+            idleScanIntervalMs = prefs.getLong(KEY_IDLE_INTERVAL, 1000L)
+            minWindowShortEdgeDp = prefs.getFloat(KEY_MIN_SHORT_EDGE_DP, 180f)
+            val savedSet = prefs.getStringSet(KEY_USER_IGNORED_PKGS, emptySet()) ?: emptySet()
+            userIgnoredPackages = savedSet.toSet()
+        }
+
+        fun saveConfig(
+            context: Context,
+            gestureFallback: Boolean = enableGestureFallback,
+            activeDuration: Long = activeWindowDurationMs,
+            idleInterval: Long = idleScanIntervalMs,
+            minShortEdgeDp: Float = minWindowShortEdgeDp,
+            ignoredPackages: Set<String> = userIgnoredPackages
+        ) {
+            val immutableCopy = ignoredPackages.toSet()
+            enableGestureFallback = gestureFallback
+            activeWindowDurationMs = activeDuration
+            idleScanIntervalMs = idleInterval
+            minWindowShortEdgeDp = minShortEdgeDp
+            userIgnoredPackages = immutableCopy
+
+            context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_GESTURE_FALLBACK, gestureFallback)
+                .putLong(KEY_ACTIVE_DURATION, activeDuration)
+                .putLong(KEY_IDLE_INTERVAL, idleInterval)
+                .putFloat(KEY_MIN_SHORT_EDGE_DP, minShortEdgeDp)
+                .putStringSet(KEY_USER_IGNORED_PKGS, immutableCopy)
+                .apply()
+        }
+
+        fun isServiceEnabledInSettings(context: Context): Boolean {
+            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+                ?: return false
+            val enabledServices = am.getEnabledAccessibilityServiceList(
+                AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+            )
+            val expectedComponent = ComponentName(context, SkipAccessibilityService::class.java)
+            return enabledServices.any { info ->
+                info.resolveInfo?.serviceInfo?.let { serviceInfo ->
+                    ComponentName(serviceInfo.packageName, serviceInfo.name) == expectedComponent
+                } == true
+            }
+        }
     }
 
-    private var lastClickTime = 0L
     private var lastPackageName = ""
+    private var activeWindowDeadline = 0L
+
+    private val lastScanTimeByPackage =
+        LinkedHashMap<String, Long>(MAX_TRACKED_PACKAGES, 0.75f, true)
+    private val lastAttemptTime =
+        LinkedHashMap<String, Long>(MAX_TRACKED_PACKAGES, 0.75f, true)
+    private val lastActionTime =
+        LinkedHashMap<String, Long>(MAX_TRACKED_PACKAGES, 0.75f, true)
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        loadConfig(this)
         isServiceRunning = true
-        Log.i(TAG, "QuickSkip 服务已连接并启动")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-
-        val currentPackage = event.packageName?.toString() ?: ""
-        // 忽略自身与系统桌面
-        if (currentPackage.isEmpty() || currentPackage == packageName ||
-            currentPackage.contains("launcher") || currentPackage.contains("systemui")
-        ) {
-            return
-        }
+        if (activeWindowDurationMs <= 0L && idleScanIntervalMs <= 0L) return
 
         val eventType = event.eventType
-        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
         ) {
-            val rootNode = rootInActiveWindow ?: return
-            try {
-                scanAndSkip(rootNode, currentPackage)
-            } finally {
-                // 回收 rootNode
-                try {
-                    rootNode.recycle()
-                } catch (ignored: Exception) {}
-            }
-        }
-    }
-
-    private fun scanAndSkip(rootNode: AccessibilityNodeInfo, currentPackage: String) {
-        val now = SystemClock.uptimeMillis()
-        // 防抖：同一个包名在 500ms 内不重复触发点击
-        if (currentPackage == lastPackageName && now - lastClickTime < 500) {
             return
         }
 
-        val targetNode = findSkipNode(rootNode, 0)
-        if (targetNode != null) {
-            Log.d(TAG, "发现目标节点: text=${targetNode.text}, desc=${targetNode.contentDescription}")
-            val success = performClickAction(targetNode)
-            if (success) {
-                lastClickTime = now
-                lastPackageName = currentPackage
-                Log.i(TAG, "成功触发跳过: package=$currentPackage")
+        val currentPackage = event.packageName?.toString() ?: return
+        if (currentPackage.isEmpty()) return
+
+        val isWindowChanged = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        val isIgnoredPackage =
+            currentPackage == packageName ||
+            currentPackage in DEFAULT_IGNORED_PACKAGES ||
+            currentPackage in userIgnoredPackages ||
+            currentPackage.contains("launcher", ignoreCase = true)
+
+        if (isIgnoredPackage) {
+            if (isWindowChanged) {
+                lastPackageName = ""
+                activeWindowDeadline = 0L
             }
+            return
+        }
+
+        val now = SystemClock.uptimeMillis()
+        val isPackageChanged = currentPackage != lastPackageName
+
+        if (isPackageChanged) {
+            val rootNode = try {
+                rootInActiveWindow
+            } catch (_: Exception) {
+                null
+            } ?: return
+
             try {
-                targetNode.recycle()
-            } catch (ignored: Exception) {}
+                if (rootNode.packageName?.toString() != currentPackage) return
+
+                lastPackageName = currentPackage
+                activeWindowDeadline =
+                    if (activeWindowDurationMs > 0L) now + activeWindowDurationMs else 0L
+                recordTime(lastScanTimeByPackage, currentPackage, now)
+
+                if (!isInCooldown(currentPackage, now)) {
+                    scanAndClickWithRoot(rootNode, currentPackage, now)
+                }
+            } catch (_: Exception) {
+            } finally {
+                safeRecycle(rootNode)
+            }
+            return
+        }
+
+        if (isWindowChanged || (activeWindowDeadline == 0L && activeWindowDurationMs > 0L)) {
+            activeWindowDeadline =
+                if (activeWindowDurationMs > 0L) now + activeWindowDurationMs else 0L
+        }
+
+        if (isInCooldown(currentPackage, now)) return
+
+        val isInActiveWindow = activeWindowDeadline > 0L && now <= activeWindowDeadline
+        val effectiveInterval = when {
+            isInActiveWindow -> FAST_SCAN_INTERVAL
+            idleScanIntervalMs > 0L -> idleScanIntervalMs
+            else -> return
+        }
+
+        val previousScan = lastScanTimeByPackage[currentPackage]
+        if (previousScan != null && now - previousScan < effectiveInterval) {
+            return
+        }
+
+        val rootNode = try {
+            rootInActiveWindow
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        try {
+            recordTime(lastScanTimeByPackage, currentPackage, now)
+
+            if (rootNode.packageName?.toString() != currentPackage) return
+            scanAndClickWithRoot(rootNode, currentPackage, now)
+        } catch (_: Exception) {
+        } finally {
+            safeRecycle(rootNode)
         }
     }
 
-    /**
-     * 深度优先遍历寻找包含“跳过”的有效节点
-     */
-    private fun findSkipNode(node: AccessibilityNodeInfo?, depth: Int): AccessibilityNodeInfo? {
-        if (node == null || depth > 20) return null
+    private fun isInCooldown(pkg: String, now: Long): Boolean {
+        val lastAction = lastActionTime[pkg]
+        if (lastAction != null && now - lastAction < ACTION_COOLDOWN) return true
+        val lastAttempt = lastAttemptTime[pkg]
+        if (lastAttempt != null && now - lastAttempt < ATTEMPT_COOLDOWN) return true
+        return false
+    }
 
-        // 排除输入框与不可见节点
-        if (node.isEditable) return null
+    private fun scanAndClickWithRoot(
+        rootNode: AccessibilityNodeInfo,
+        currentPackage: String,
+        now: Long
+    ) {
+        val windowBounds = Rect()
+        rootNode.getBoundsInScreen(windowBounds)
+
+        val counter = intArrayOf(0)
+        val targetNode = findSkipNode(rootNode, 0, counter) ?: return
+
+        try {
+            recordTime(lastAttemptTime, currentPackage, now)
+
+            if (performClickAction(targetNode, windowBounds, currentPackage)) {
+                recordTime(lastActionTime, currentPackage, now)
+            }
+        } finally {
+            if (targetNode !== rootNode) {
+                safeRecycle(targetNode)
+            }
+        }
+    }
+
+    private fun recordTime(map: LinkedHashMap<String, Long>, pkg: String, time: Long) {
+        map[pkg] = time
+        while (map.size > MAX_TRACKED_PACKAGES) {
+            val oldest = map.keys.firstOrNull() ?: break
+            map.remove(oldest)
+        }
+    }
+
+    private fun findSkipNode(
+        node: AccessibilityNodeInfo?,
+        depth: Int,
+        counter: IntArray
+    ): AccessibilityNodeInfo? {
+        if (node == null || depth > MAX_NODE_DEPTH || ++counter[0] > MAX_NODE_COUNT) {
+            return null
+        }
+
+        if (node.isEditable || node.isPassword) return null
 
         val text = node.text?.toString()?.trim() ?: ""
         val desc = node.contentDescription?.toString()?.trim() ?: ""
 
-        if (isSkipMatch(text) || isSkipMatch(desc)) {
-            // 确保该节点在屏幕上有实际显示区域
+        if (node.isEnabled && (isSkipMatch(text) || isSkipMatch(desc))) {
             val rect = Rect()
             node.getBoundsInScreen(rect)
-            if (rect.width() > 0 && rect.height() > 0 && rect.top >= 0) {
+
+            if (node.isVisibleToUser &&
+                rect.width() > 0 &&
+                rect.height() > 0 &&
+                rect.top >= 0
+            ) {
                 return node
             }
         }
 
-        val childCount = node.childCount
-        for (i in 0 until childCount) {
+        for (i in 0 until node.childCount) {
+            if (counter[0] >= MAX_NODE_COUNT) break
+
             val child = node.getChild(i) ?: continue
-            val result = findSkipNode(child, depth + 1)
-            if (result != null) {
-                return result
-            }
+            var transferOwnership = false
+
             try {
-                child.recycle()
-            } catch (ignored: Exception) {}
+                val result = findSkipNode(child, depth + 1, counter)
+                if (result != null) {
+                    transferOwnership = result === child
+                    return result
+                }
+            } finally {
+                if (!transferOwnership) {
+                    safeRecycle(child)
+                }
+            }
         }
+
         return null
     }
 
     private fun isSkipMatch(raw: String): Boolean {
-        if (raw.isEmpty() || raw.length > 12) return false
-        if (SKIP_REGEX.matches(raw)) return true
-        for (kw in KEYWORDS) {
-            if (raw.contains(kw)) return true
-        }
-        return false
+        if (raw.isEmpty() || raw.length > 16) return false
+        return SKIP_PATTERNS.any { it.matches(raw) }
     }
 
-    /**
-     * 优先节点点击，其次寻找可点击父节点，若皆不可点击则使用手势模拟直接点击坐标
-     */
-    private fun performClickAction(node: AccessibilityNodeInfo): Boolean {
-        // 1. 节点自身支持点击
-        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            return true
-        }
-
-        // 2. 向上查找 3 层父容器是否可点击
-        var parent = node.parent
-        var count = 0
-        while (parent != null && count < 3) {
-            if (parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                parent.recycle()
-                return true
+    private fun performClickAction(
+        node: AccessibilityNodeInfo,
+        windowBounds: Rect,
+        expectedPackage: String
+    ): Boolean {
+        if (node.isVisibleToUser && node.isEnabled && node.isClickable) {
+            val clicked = try {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            } catch (_: Exception) {
+                false
             }
-            val nextParent = parent.parent
-            parent.recycle()
-            parent = nextParent
-            count++
+            if (clicked) return true
         }
 
-        // 3. 终极兼容方案：手势模拟直接点击中心坐标
+        var parent = try { node.parent } catch (_: Exception) { null }
+        var count = 0
+
+        while (parent != null && count < 3) {
+            count++
+            val current = parent
+            val nextParent: AccessibilityNodeInfo?
+
+            try {
+                if (current.isVisibleToUser &&
+                    current.isEnabled &&
+                    current.isClickable &&
+                    current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                ) {
+                    safeRecycle(current)
+                    return true
+                }
+                nextParent = if (count < 3) current.parent else null
+            } catch (_: Exception) {
+                safeRecycle(current)
+                return false
+            }
+
+            safeRecycle(current)
+            parent = nextParent
+        }
+
+        if (!enableGestureFallback) return false
+
         val rect = Rect()
         node.getBoundsInScreen(rect)
-        if (rect.width() > 0 && rect.height() > 0) {
-            return clickCoordinates(rect.centerX().toFloat(), rect.centerY().toFloat())
+
+        val winWidth = windowBounds.width()
+        val winHeight = windowBounds.height()
+        if (winWidth <= 0 || winHeight <= 0) return false
+
+        val density = resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
+        val widthDp = winWidth / density
+        val heightDp = winHeight / density
+        if (minOf(widthDp, heightDp) < minWindowShortEdgeDp) return false
+
+        val tolerantBounds = Rect(windowBounds).apply {
+            inset(-4, -4)
+        }
+        if (!tolerantBounds.contains(rect)) return false
+        if (!windowBounds.contains(rect.centerX(), rect.centerY())) return false
+
+        val minButtonPx = (MIN_BUTTON_SIZE_DP * density).roundToInt().coerceAtLeast(1)
+        val maxButtonWidthPx = winWidth / 2
+        val maxButtonHeightPx = winHeight / 6
+        if (rect.width() !in minButtonPx..maxButtonWidthPx ||
+            rect.height() !in minButtonPx..maxButtonHeightPx
+        ) {
+            return false
         }
 
-        return false
-    }
+        val relCenterX = rect.centerX() - windowBounds.left
+        val relCenterY = rect.centerY() - windowBounds.top
 
-    /**
-     * 利用 Android 7.0+ dispatchGesture 手势接口直接点击坐标
-     */
-    private fun clickCoordinates(x: Float, y: Float): Boolean {
-        val path = Path().apply {
-            moveTo(x, y)
+        val isHorizontalEdge =
+            relCenterX < winWidth * 0.25f ||
+            relCenterX > winWidth * 0.75f
+        val isVerticalEdge =
+            relCenterY < winHeight * 0.25f ||
+            relCenterY > winHeight * 0.75f
+
+        if (!isHorizontalEdge || !isVerticalEdge) return false
+
+        val activeRoot = try {
+            rootInActiveWindow
+        } catch (_: Exception) {
+            null
+        } ?: return false
+
+        try {
+            val activePackage = activeRoot.packageName?.toString()
+            if (activePackage != expectedPackage) return false
+
+            val currentWindowBounds = Rect()
+            activeRoot.getBoundsInScreen(currentWindowBounds)
+            if (currentWindowBounds != windowBounds) return false
+
+            val path = Path().apply {
+                moveTo(rect.centerX().toFloat(), rect.centerY().toFloat())
+            }
+            val stroke = GestureDescription.StrokeDescription(path, 0, 50)
+            val gesture = GestureDescription.Builder()
+                .addStroke(stroke)
+                .build()
+
+            return dispatchGesture(gesture, null, null)
+        } catch (_: Exception) {
+            return false
+        } finally {
+            safeRecycle(activeRoot)
         }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 50)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        return dispatchGesture(gesture, null, null)
     }
 
-    override fun onInterrupt() {
-        Log.w(TAG, "QuickSkip 服务被中断")
+    @Suppress("DEPRECATION")
+    private fun safeRecycle(node: AccessibilityNodeInfo?) {
+        try {
+            node?.recycle()
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onInterrupt() {}
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        isServiceRunning = false
+        return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         isServiceRunning = false
-        Log.i(TAG, "QuickSkip 服务已销毁")
+        lastScanTimeByPackage.clear()
+        lastAttemptTime.clear()
+        lastActionTime.clear()
+        lastPackageName = ""
+        activeWindowDeadline = 0L
+        super.onDestroy()
     }
 }
